@@ -1,0 +1,38 @@
+name: Build release
+
+on:
+  push:
+    tags:
+      # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: Install wasm-tools
+      run: cargo install wasm-tools
+    - name: Validate WIT
+      run: wasm-tools component wit wg_display_widget_wit/wit -d widget
+    - name: Add WASM target
+      run: rustup target add wasm32-unknown-unknown
+    - name: Build
+      working-directory: ./widget
+      run: cargo build --target wasm32-unknown-unknown --release
+    - name: Convert module to WebAssembly component
+      working-directory: ./widget
+      run: wasm-tools component new target/wasm32-unknown-unknown/release/widget.wasm -o target/wasm32-unknown-unknown/release/widget.wasm
+    - uses: ncipollo/release-action@v1
+      with:
+          artifacts: "widget/target/wasm32-unknown-unknown/release/widget.wasm"
+          artifactErrorsFailBuild: true

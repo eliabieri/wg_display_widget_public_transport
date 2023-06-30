@@ -21,9 +21,9 @@ jobs:
       with:
         submodules: recursive
     - name: Install wasm-tools
-      run: cargo install wasm-tools
+      run: cargo install --git https://github.com/bytecodealliance/wasm-tools wasm-tools
     - name: Validate WIT
-      run: wasm-tools component wit wg_display_widget_wit/wit -d widget
+      run: wasm-tools component wit wg_display_widget_wit/wit
     - name: Add WASM target
       run: rustup target add wasm32-unknown-unknown
     - name: Build

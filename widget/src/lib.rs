@@ -8,6 +8,8 @@ use time_humanize::Accuracy;
 use time_humanize::HumanTime;
 use time_humanize::Tense;
 
+use widget::widget::{clocks, http};
+
 wit_bindgen::generate!({
     path: "../wg_display_widget_wit/wit",
     world: "widget"

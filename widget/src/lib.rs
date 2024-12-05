@@ -54,7 +54,7 @@ const WIDGET_NAME: &str = "Public Transport";
 
 struct MyWidget;
 
-impl Widget for MyWidget {
+impl Guest for MyWidget {
     fn get_name() -> wit_bindgen::rt::string::String {
         WIDGET_NAME.into()
     }
@@ -161,4 +161,4 @@ impl MyWidget {
     }
 }
 
-export_widget!(MyWidget);
+export!(MyWidget);

@@ -1,6 +1,6 @@
 use serde_json::Error;
 
-use schemars::{schema_for, JsonSchema};
+use schemars::JsonSchema;
 use serde::Deserialize;
 use time::format_description;
 use time::OffsetDateTime;
@@ -44,10 +44,15 @@ struct PublicTransportData {
 }
 
 #[derive(JsonSchema, Deserialize)]
-struct WidgetConfig {
+struct Connection {
     from_station: String,
     to_station: String,
     num_connections: u8,
+}
+
+#[derive(JsonSchema, Deserialize)]
+struct WidgetConfig {
+    connections: Vec<Connection>,
 }
 
 const WIDGET_NAME: &str = "Public Transport";
@@ -69,40 +74,23 @@ impl Guest for MyWidget {
         let config: WidgetConfig =
             serde_json::from_str(&context.config).expect("Failed to parse config");
 
-        let url = format!(
-            "http://transport.opendata.ch/v1/connections?from={}&to={}&limit=16",
-            urlencoding::encode(config.from_station.as_str()),
-            urlencoding::encode(config.to_station.as_str()),
-        );
+        let text_buffer = config.connections.iter()
+            .map(|connection| {
+                match MyWidget::fetch_connection(connection) {
+                    Ok(content) => content,
+                    Err(error) => error.data
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        let response = http::request(http::Method::Get, url.as_str(), None);
-        let Ok(response) = response else {
-            return WidgetResult {
-                data: "Failed to make network request".into(),
-            };
-        };
-
-        if 200 != response.status {
-            return WidgetResult {
-                data: format!("Response status != 200: {}", response.status),
-            };
-        }
-
-        let data: Result<PublicTransportData, Error> =
-            serde_json::from_slice(response.bytes.as_slice());
-        if let Err(error) = data {
-            return WidgetResult {
-                data: format!("Failed to parse response: {:?}", error),
-            };
-        };
-        let data = data.unwrap();
-        let content = MyWidget::get_departure_string(&data, config.num_connections as usize);
-
-        WidgetResult { data: content }
+        WidgetResult { data: text_buffer }
     }
 
     fn get_config_schema() -> wit_bindgen::rt::string::String {
-        let schema = schema_for!(WidgetConfig);
+        let mut settings = schemars::gen::SchemaSettings::default();
+        settings.inline_subschemas = true;
+        let schema = settings.into_generator().into_root_schema_for::<WidgetConfig>();
         serde_json::to_string_pretty(&schema).unwrap()
     }
 
@@ -119,6 +107,38 @@ impl MyWidget {
     pub fn now() -> OffsetDateTime {
         let now = clocks::now();
         OffsetDateTime::from_unix_timestamp(now.seconds as i64).unwrap()
+    }
+
+    pub fn fetch_connection(connection: &Connection) -> Result<String, WidgetResult> {
+        let url = format!(
+                "http://transport.opendata.ch/v1/connections?from={}&to={}&limit=16",
+                urlencoding::encode(connection.from_station.as_str()),
+                urlencoding::encode(connection.to_station.as_str()),
+            );
+
+            let response = http::request(http::Method::Get, url.as_str(), None);
+            let Ok(response) = response else {
+                return Err(WidgetResult {
+                    data: "Failed to make network request".into(),
+                });
+            };
+
+            if 200 != response.status {
+                return Err(WidgetResult {
+                    data: format!("Response status != 200: {}", response.status),
+                });
+            }
+
+            let data: Result<PublicTransportData, Error> =
+                serde_json::from_slice(response.bytes.as_slice());
+            if let Err(error) = data {
+                return Err(WidgetResult {
+                    data: format!("Failed to parse response: {:?}", error),
+                });
+            };
+            let data = data.unwrap();
+            Ok(MyWidget::get_departure_string(&data, connection.num_connections as usize))
+
     }
 
     pub fn get_departure_string(data: &PublicTransportData, num_departures: usize) -> String {
@@ -140,14 +160,14 @@ impl MyWidget {
             content += &format!(
                 "\n{} ({})",
                 MyWidget::format_departure_offset(departure),
-                MyWidget::format_departure(departure)
+                MyWidget::format_departure_time(departure)
             )
             .to_string();
         }
         content
     }
 
-    pub fn format_departure(departure: OffsetDateTime) -> String {
+    pub fn format_departure_time(departure: OffsetDateTime) -> String {
         let format = format_description::parse("[hour]:[minute]").unwrap();
         match departure.format(&format) {
             Ok(departure) => departure,
